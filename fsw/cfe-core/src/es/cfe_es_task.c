@@ -614,7 +614,7 @@ void CFE_ES_TaskPipe(CFE_SB_MsgPtr_t Msg)
                 case CFE_ES_SEND_MEM_POOL_STATS_CC:
                     if (CFE_ES_VerifyCmdLength(Msg, sizeof(CFE_ES_SendMemPoolStats_t)))
                     {
-                        CFE_ES_SendMemPoolStatsCmd((CFE_ES_SendMemPoolStats_t*)Msg);
+                        CFE_ES_SendMemPoolStatsCmd((CFE_ES_SendMemPoolStats_t*)(void*)Msg);
                     }
                     break;
 
