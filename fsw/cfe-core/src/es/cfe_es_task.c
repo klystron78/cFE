@@ -928,7 +928,8 @@ int32 CFE_ES_StartAppCmd(const CFE_ES_StartApp_t *data)
                    LocalAppName,
                    (uint32) cmd->Priority,
                    (uint32) cmd->StackSize,
-                   (uint32) cmd->ExceptionAction);
+                   (uint32) cmd->ExceptionAction,
+                   0 /* TODO: add to command */);
 
         /*
         ** Send appropriate event message

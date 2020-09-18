@@ -268,9 +268,10 @@ int32 CFE_ES_ParseFileEntry(const char **TokenList, uint32 NumTokens)
    const char   *AppName;
    const char   *EntryPoint;
    const char   *EntryType;
-   unsigned int Priority;
-   unsigned int StackSize;
-   unsigned int ExceptionAction;
+   unsigned int IntVals[CFE_ES_STARTSCRIPT_INTS_PER_LINE];
+   enum { PRIORITY, STACK_SIZE, EXCEPTION_ACTION, AFFINITY };
+   int i;
+
    uint32 ApplicationId;
    int32  CreateStatus = CFE_ES_ERR_APP_CREATE;
 
@@ -300,9 +301,10 @@ int32 CFE_ES_ParseFileEntry(const char **TokenList, uint32 NumTokens)
     * This permissive parsing should not be relied upon, as it may become more strict again in
     * future CFE revisions.
     */
-   Priority = strtoul(TokenList[4], NULL, 0);
-   StackSize = strtoul(TokenList[5], NULL, 0);
-   ExceptionAction = strtoul(TokenList[7], NULL, 0);
+   for(i=0; i<CFE_ES_STARTSCRIPT_INTS_PER_LINE; ++i) {
+       static const int indexes[] = { 4, 5, 7, 8 };
+       IntVals[i] = strtoul(TokenList[indexes[i]], NULL, 0);
+   }
 
    if(strcmp(EntryType,"CFE_APP")==0)
    {
@@ -315,14 +317,15 @@ int32 CFE_ES_ParseFileEntry(const char **TokenList, uint32 NumTokens)
       ** 1 ( Processor reset ). If it's non-zero, assume it means
       ** reset CPU.
       */
-      if ( ExceptionAction > CFE_ES_ExceptionAction_RESTART_APP )
-          ExceptionAction = CFE_ES_ExceptionAction_PROC_RESTART;
+      if ( IntVals[EXCEPTION_ACTION] > CFE_ES_ExceptionAction_RESTART_APP )
+          IntVals[EXCEPTION_ACTION] = CFE_ES_ExceptionAction_PROC_RESTART;
       /*
       ** Now create the application
       */
       CreateStatus = CFE_ES_AppCreate(&ApplicationId, FileName,
-                               EntryPoint, AppName, (uint32) Priority,
-                               (uint32) StackSize, (uint32) ExceptionAction );
+                               EntryPoint, AppName, (uint32) IntVals[PRIORITY],
+                               (uint32) IntVals[STACK_SIZE], (uint32) IntVals[EXCEPTION_ACTION],
+                               (uint32) IntVals[AFFINITY] );
    }
    else if(strcmp(EntryType,"CFE_LIB")==0)
    {
@@ -361,7 +364,8 @@ int32 CFE_ES_AppCreate(uint32 *ApplicationIdPtr,
                        const char   *AppName,
                        uint32  Priority,
                        uint32  StackSize,
-                       uint32  ExceptionAction)
+                       uint32  ExceptionAction,
+                       uint32  Affinity)
 {
    cpuaddr StartAddr;
    int32   ReturnCode;
@@ -491,14 +495,14 @@ int32 CFE_ES_AppCreate(uint32 *ApplicationIdPtr,
       /*
       ** Create the primary task for the newly loaded task
       */
-      ReturnCode = OS_TaskCreate(&MainTaskId,   /* task id */
+      ReturnCode = OS_TaskCreate_Ex(&MainTaskId,   /* task id */
                        AppName,             /* task name */
                        (osal_task_entry)StartAddr,   /* task function pointer */
                        NULL,                /* stack pointer */
                        StackSize,           /* stack size */
                        Priority,            /* task priority */
-                       OS_FP_ENABLED);     /* task options */
-
+                       OS_FP_ENABLED,       /* task options */
+                       Affinity);           /* task CPU affinity */
 
       if(ReturnCode != OS_SUCCESS)
       {
@@ -985,7 +989,8 @@ void CFE_ES_ProcessControlRequest(CFE_ES_AppRecord_t *AppRecPtr)
                                            (char *)AppStartParams.Name,
                                            AppStartParams.Priority,
                                            AppStartParams.StackSize,
-                                           AppStartParams.ExceptionAction);
+                                           AppStartParams.ExceptionAction,
+                                           AppStartParams.Affinity);
 
             if ( Status == CFE_SUCCESS )
             {
@@ -1021,7 +1026,8 @@ void CFE_ES_ProcessControlRequest(CFE_ES_AppRecord_t *AppRecPtr)
                                            (char *)AppStartParams.Name,
                                            AppStartParams.Priority,
                                            AppStartParams.StackSize,
-                                           AppStartParams.ExceptionAction);
+                                           AppStartParams.ExceptionAction,
+                                           AppStartParams.Affinity);
             if ( Status == CFE_SUCCESS )
             {
                CFE_EVS_SendEvent(CFE_ES_RELOAD_APP_INF_EID, CFE_EVS_EventType_INFORMATION,
