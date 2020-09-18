@@ -17,6 +17,7 @@ project(CFECORE C)
 
 # Define the "_CFE_CORE_" macro during compilation of all CFE core sources
 add_definitions(-D_CFE_CORE_)
+add_definitions(-Wno-conversion)
 
 set(CFE_CORE_MODULES es sb evs tbl time fs)
 set(CFE_ALL_MODULE_SRCS)

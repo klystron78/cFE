@@ -45,7 +45,9 @@
 /*
 ** Macro Definitions
 */
-#define CFE_ES_STARTSCRIPT_MAX_TOKENS_PER_LINE      8
+#define CFE_ES_STARTSCRIPT_MAX_TOKENS_PER_LINE      9
+#define CFE_ES_STARTSCRIPT_INTS_PER_LINE            4
+#define CFE_ES_STARTSCRIPT_INDEX_INTS_START         4
 
 /*
 ** Type Definitions
@@ -75,6 +77,7 @@ typedef struct
   char                  FileName[OS_MAX_PATH_LEN];
 
   uint32                StackSize;
+  uint32                Affinity;
   cpuaddr               StartAddress;
   osal_id_t             ModuleId;
 
@@ -173,7 +176,8 @@ int32 CFE_ES_AppCreate(CFE_ES_ResourceID_t *ApplicationIdPtr,
                        const char   *AppName,
                        uint32  Priority,
                        uint32  StackSize,
-                       uint32  ExceptionAction);
+                       uint32  ExceptionAction,
+                       uint32  Affinity);
 /*
 ** Internal function to load a a new cFE shared Library
 */
