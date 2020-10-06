@@ -728,10 +728,8 @@ int32  CFE_SB_SubscribeFull(CFE_SB_MsgId_t   MsgId,
                             uint16           MsgLim,
                             uint8            Scope)
 {
-    CFE_SB_MsgRouteIdx_t RouteIdx;
     CFE_SB_RouteEntry_t* RoutePtr;
     int32  Stat;
-    CFE_SB_MsgKey_t   MsgKey;
     CFE_ES_ResourceID_t        TskId;
     CFE_ES_ResourceID_t  AppId;
     uint8  PipeIdx;
@@ -783,11 +781,8 @@ int32  CFE_SB_SubscribeFull(CFE_SB_MsgId_t   MsgId,
         return CFE_SB_BAD_ARGUMENT;
     }/* end if */
 
-    /* Convert the API MsgId into the SB internal representation MsgKey */
-    MsgKey = CFE_SB_ConvertMsgIdtoMsgKey(MsgId);
-
     /* check for duplicate subscription */
-    if(CFE_SB_DuplicateSubscribeCheck(MsgKey,PipeId)==CFE_SB_DUPLICATE){
+    if(CFE_SB_DuplicateSubscribeCheck(MsgId,PipeId)==CFE_SB_DUPLICATE){
         CFE_SB.HKTlmMsg.Payload.DuplicateSubscriptionsCounter++;
         CFE_SB_UnlockSharedData(__func__,__LINE__);
         CFE_EVS_SendEventWithAppID(CFE_SB_DUP_SUBSCRIP_EID,CFE_EVS_EventType_INFORMATION,CFE_SB.AppId,
@@ -797,34 +792,13 @@ int32  CFE_SB_SubscribeFull(CFE_SB_MsgId_t   MsgId,
         return CFE_SUCCESS;
     }/* end if */
 
-    /*
-    ** If there has been a subscription for this message id earlier,
-    ** get the element number in the routing table.
-    */
-    RouteIdx = CFE_SB_GetRoutingTblIdx(MsgKey);
-
     /* if not first subscription for this message KEY ... */
-    if(CFE_SB_IsValidRouteIdx(RouteIdx))
+    if(!(RoutePtr=CFE_SB_GetRoutePtrFromMsgId(MsgId)))
     {
-        RoutePtr = CFE_SB_GetRoutePtrFromIdx(RouteIdx);
-
-        /*
-         * FIXME: If a hash or other conversion is used between MsgId and MsgKey,
-         * then it is possible that this existing route is for a different MsgId.
-         *
-         * The MsgId should be checked against the "MsgId" in the route here.
-         *
-         * However it is not possible to have a mismatch in the default case where
-         * MsgKey == MsgId
-         */
-    }
-    else
-    {
-        /* Get the index to the first available element in the routing table */
-        RouteIdx = CFE_SB_RouteIdxPop_Unsync();
+        /* If here, the route does not exist -- create it */
 
         /* if all routing table elements are used, send event */
-        if(!CFE_SB_IsValidRouteIdx(RouteIdx)){
+        if(CFE_SB.StatTlmMsg.Payload.MsgIdsInUse>=CFE_PLATFORM_SB_MAX_MSG_IDS) {
             CFE_SB_UnlockSharedData(__func__,__LINE__);
             CFE_EVS_SendEventWithAppID(CFE_SB_MAX_MSGS_MET_EID,CFE_EVS_EventType_ERROR,CFE_SB.AppId,
               "Subscribe Err:Max Msgs(%d)In Use,MsgId 0x%x,pipe %s,app %s",
@@ -834,20 +808,13 @@ int32  CFE_SB_SubscribeFull(CFE_SB_MsgId_t   MsgId,
             return CFE_SB_MAX_MSGS_MET;
         }/* end if */
 
-        /* Increment the MsgIds in use ctr and if it's > the high water mark,*/
+        /* populate the route table entry */
+        RoutePtr = CFE_SB_InsertRouteEntryFromMsgId(MsgId);
+
         /* adjust the high water mark */
-        CFE_SB.StatTlmMsg.Payload.MsgIdsInUse++;
         if(CFE_SB.StatTlmMsg.Payload.MsgIdsInUse > CFE_SB.StatTlmMsg.Payload.PeakMsgIdsInUse){
            CFE_SB.StatTlmMsg.Payload.PeakMsgIdsInUse = CFE_SB.StatTlmMsg.Payload.MsgIdsInUse;
         }/* end if */
-
-        /* populate the look up table with the routing table index */
-        CFE_SB_SetRoutingTblIdx(MsgKey,RouteIdx);
-
-        /* label the new routing block with the message identifier */
-        RoutePtr = CFE_SB_GetRoutePtrFromIdx(RouteIdx);
-        RoutePtr->MsgId = MsgId;
-
     }/* end if */
 
     if(RoutePtr->Destinations >= CFE_PLATFORM_SB_MAX_DEST_PER_PKT){
@@ -1021,8 +988,6 @@ int32 CFE_SB_UnsubscribeWithAppId(CFE_SB_MsgId_t MsgId,
 int32 CFE_SB_UnsubscribeFull(CFE_SB_MsgId_t MsgId,CFE_SB_PipeId_t PipeId,
                              uint8 Scope,CFE_ES_ResourceID_t AppId)
 {
-    CFE_SB_MsgKey_t MsgKey;
-    CFE_SB_MsgRouteIdx_t RouteIdx;
     CFE_SB_RouteEntry_t* RoutePtr;
     uint32  PipeIdx;
     CFE_ES_ResourceID_t        TskId;
@@ -1070,12 +1035,8 @@ int32 CFE_SB_UnsubscribeFull(CFE_SB_MsgId_t MsgId,CFE_SB_PipeId_t PipeId,
         return CFE_SB_BAD_ARGUMENT;
     }/* end if */
 
-    /* get index into routing table */
-    MsgKey = CFE_SB_ConvertMsgIdtoMsgKey(MsgId);
-    RouteIdx = CFE_SB_GetRoutingTblIdx(MsgKey);
-
     /* if there have never been subscriptions for this message id... */
-    if(!CFE_SB_IsValidRouteIdx(RouteIdx))
+    if(!(RoutePtr=CFE_SB_GetRoutePtrFromMsgId(MsgId)))
     {
         char    PipeName[OS_MAX_API_NAME] = {'\0'};
 
@@ -1089,8 +1050,6 @@ int32 CFE_SB_UnsubscribeFull(CFE_SB_MsgId_t MsgId,CFE_SB_PipeId_t PipeId,
             PipeName,CFE_SB_GetAppTskName(TskId,FullName));
         return CFE_SUCCESS;
     }/* end if */
-
-    RoutePtr = CFE_SB_GetRoutePtrFromIdx(RouteIdx);
 
     /* search the list for a matching pipe id */
     for (DestPtr = RoutePtr->ListHeadPtr; DestPtr != NULL && DestPtr->PipeId != PipeId; DestPtr = DestPtr->Next)
@@ -1188,7 +1147,6 @@ int32  CFE_SB_SendMsgFull(CFE_SB_Msg_t    *MsgPtr,
                           uint32           TlmCntIncrements,
                           uint32           CopyMode)
 {
-    CFE_SB_MsgKey_t         MsgKey;
     CFE_SB_MsgId_t          MsgId;
     int32                   Status;
     CFE_SB_DestinationD_t   *DestPtr = NULL;
@@ -1196,7 +1154,6 @@ int32  CFE_SB_SendMsgFull(CFE_SB_Msg_t    *MsgPtr,
     CFE_SB_RouteEntry_t     *RtgTblPtr;
     CFE_SB_BufferD_t        *BufDscPtr;
     uint16                  TotalMsgSize;
-    CFE_SB_MsgRouteIdx_t    RtgTblIdx;
     CFE_ES_ResourceID_t     TskId;
     uint32                  i;
     char                    FullName[(OS_MAX_API_NAME * 2)];
@@ -1258,17 +1215,13 @@ int32  CFE_SB_SendMsgFull(CFE_SB_Msg_t    *MsgPtr,
         return CFE_SB_MSG_TOO_BIG;
     }/* end if */
 
-    MsgKey = CFE_SB_ConvertMsgIdtoMsgKey(MsgId);
-
     /* take semaphore to prevent a task switch during this call */
     CFE_SB_LockSharedData(__func__,__LINE__);
 
-    RtgTblIdx = CFE_SB_GetRoutingTblIdx(MsgKey);
-
     /* if there have been no subscriptions for this pkt, */
     /* increment the dropped pkt cnt, send event and return success */
-    if(!CFE_SB_IsValidRouteIdx(RtgTblIdx)){
-
+    if(!(RtgTblPtr=CFE_SB_GetRoutePtrFromMsgId(MsgId)))
+    {
         CFE_SB.HKTlmMsg.Payload.NoSubscribersCounter++;
 
         if (CopyMode == CFE_SB_SEND_ZEROCOPY){
@@ -1324,9 +1277,6 @@ int32  CFE_SB_SendMsgFull(CFE_SB_Msg_t    *MsgPtr,
         /* Copy the packet into the SB memory space */
         memcpy( BufDscPtr->Buffer, MsgPtr, (uint16)TotalMsgSize );
     }
-
-    /* Obtain the actual routing table entry from the selected index */
-    RtgTblPtr = CFE_SB_GetRoutePtrFromIdx(RtgTblIdx);
 
     /* For Tlm packets, increment the seq count if requested */
     if((CFE_SB_GetPktType(MsgId)==CFE_SB_PKTTYPE_TLM) &&
@@ -1588,7 +1538,7 @@ int32  CFE_SB_RcvMsg(CFE_SB_MsgPtr_t    *BufPtr,
         *BufPtr = (CFE_SB_MsgPtr_t) Message->Buffer;
 
         /* get pointer to destination to be used in decrementing msg limit cnt*/
-        DestPtr = CFE_SB_GetDestPtr(CFE_SB_ConvertMsgIdtoMsgKey(PipeDscPtr->CurrentBuff->MsgId), PipeDscPtr->PipeId);
+        DestPtr = CFE_SB_GetDestPtr(PipeDscPtr->CurrentBuff->MsgId, PipeDscPtr->PipeId);
 
         /*
         ** DestPtr would be NULL if the msg is unsubscribed to while it is on

@@ -111,52 +111,6 @@
 
 
 /******************************************************************************
-**  Typedef:  CFE_SB_MsgKey_Atom_t
-**
-**  Purpose:
-**           Defines the an integer type for the numeric key that is used for routing
-**           table lookups.  This is the "raw value" type and typically should not
-**           be used directly, except by internal table lookups.
-**
-*/
-typedef uint32  CFE_SB_MsgKey_Atom_t;
-
-/******************************************************************************
-**  Typedef:  CFE_SB_MsgKey_t
-**
-**  Purpose:
-**           This is a "holding structure" for the related integer CFE_SB_MsgKey_Atom_t values.
-**           This defines the data type that is stored in other structures and/or passed between
-**           software bus functions.
-**
-**           It is implemented this way to improve type safety and help ensure that "MsgKey"
-**           values are not inadvertently exchanged with MsgId or Routing Index values.
-**
-*/
-typedef struct
-{
-    CFE_SB_MsgKey_Atom_t KeyIdx;    /**< Holding value, do not use directly */
-} CFE_SB_MsgKey_t;
-
-/******************************************************************************/
-/**
- * @brief An wrapper for holding a routing table index
- *
- * This is intended as a form of "strong typedef" where direct assignments should
- * be restricted.  Software bus uses numeric indexes into multiple tables to perform
- * its duties, and it is important that these index values are distinct and separate
- * and not mixed together.
- *
- * Using this holding structure prevents assignment directly into a different index
- * or direct usage as numeric value.
- */
-typedef struct
-{
-    CFE_SB_MsgRouteIdx_Atom_t RouteIdx;     /**< Holding value, do not use directly in code */
-} CFE_SB_MsgRouteIdx_t;
-
-
-/******************************************************************************
 **  Typedef:  CFE_SB_BufferD_t
 **
 **  Purpose:
@@ -292,15 +246,10 @@ typedef struct {
     CFE_SB_PipeId_t     CmdPipe;
     CFE_SB_Msg_t        *CmdPipePktPtr;
     CFE_SB_MemParams_t  Mem;
-    CFE_SB_MsgRouteIdx_t      MsgMap[CFE_SB_MAX_NUMBER_OF_MSG_KEYS];
     CFE_SB_RouteEntry_t RoutingTbl[CFE_PLATFORM_SB_MAX_MSG_IDS];
     CFE_SB_AllSubscriptionsTlm_t    PrevSubMsg;
     CFE_SB_SingleSubscriptionTlm_t  SubRprtMsg;
     CFE_EVS_BinFilter_t EventFilters[CFE_SB_MAX_CFG_FILE_EVENTS_TO_FILTER];
-
-    uint16 RouteIdxTop;
-    CFE_SB_MsgRouteIdx_t RouteIdxStack[CFE_PLATFORM_SB_MAX_MSG_IDS];
-
 }cfe_sb_t;
 
 
@@ -336,13 +285,8 @@ typedef struct{
 int32  CFE_SB_AppInit(void);
 int32  CFE_SB_InitBuffers(void);
 void   CFE_SB_InitPipeTbl(void);
-void   CFE_SB_InitMsgMap(void);
 void   CFE_SB_InitRoutingTbl(void);
-void   CFE_SB_InitIdxStack(void);
 void   CFE_SB_ResetCounts(void);
-void  CFE_SB_RouteIdxPush_Unsync(CFE_SB_MsgRouteIdx_t idx);
-CFE_SB_MsgRouteIdx_t  CFE_SB_RouteIdxPop_Unsync(void);
-CFE_SB_MsgKey_t CFE_SB_ConvertMsgIdtoMsgKey(CFE_SB_MsgId_t MsgId);
 void   CFE_SB_LockSharedData(const char *FuncName, int32 LineNumber);
 void   CFE_SB_UnlockSharedData(const char *FuncName, int32 LineNumber);
 void   CFE_SB_ReleaseBuffer (CFE_SB_BufferD_t *bd, CFE_SB_DestinationD_t *dest);
@@ -350,13 +294,12 @@ int32  CFE_SB_ReadQueue(CFE_SB_PipeD_t *PipeDscPtr,CFE_ES_ResourceID_t TskId,
                         CFE_SB_TimeOut_t Time_Out,CFE_SB_BufferD_t **Message );
 int32  CFE_SB_WriteQueue(CFE_SB_PipeD_t *pd,uint32 TskId,
                          const CFE_SB_BufferD_t *bd,CFE_SB_MsgId_t MsgId );
-CFE_SB_MsgRouteIdx_t CFE_SB_GetRoutingTblIdx(CFE_SB_MsgKey_t MsgKey);
 uint8  CFE_SB_GetPipeIdx(CFE_SB_PipeId_t PipeId);
 int32  CFE_SB_ReturnBufferToPool(CFE_SB_BufferD_t *bd);
 void   CFE_SB_ProcessCmdPipePkt(void);
-int32  CFE_SB_DuplicateSubscribeCheck(CFE_SB_MsgKey_t MsgKey,CFE_SB_PipeId_t PipeId);
-void   CFE_SB_SetRoutingTblIdx(CFE_SB_MsgKey_t MsgKey, CFE_SB_MsgRouteIdx_t Value);
-CFE_SB_RouteEntry_t* CFE_SB_GetRoutePtrFromIdx(CFE_SB_MsgRouteIdx_t RouteIdx);
+int32  CFE_SB_DuplicateSubscribeCheck(CFE_SB_MsgId_t MsgId,CFE_SB_PipeId_t PipeId);
+CFE_SB_RouteEntry_t* CFE_SB_GetRoutePtrFromMsgId(CFE_SB_MsgId_t MsgId);
+CFE_SB_RouteEntry_t* CFE_SB_InsertRouteEntryFromMsgId(CFE_SB_MsgId_t MsgId);
 void   CFE_SB_ResetCounters(void);
 void   CFE_SB_SetMsgSeqCnt(CFE_SB_MsgPtr_t MsgPtr,uint32 Count);
 char   *CFE_SB_GetAppTskName(CFE_ES_ResourceID_t TaskId, char* FullName);
@@ -364,7 +307,7 @@ CFE_SB_BufferD_t *CFE_SB_GetBufferFromPool(CFE_SB_MsgId_t MsgId, uint16 Size);
 CFE_SB_BufferD_t *CFE_SB_GetBufferFromCaller(CFE_SB_MsgId_t MsgId, void *Address);
 CFE_SB_PipeD_t   *CFE_SB_GetPipePtr(CFE_SB_PipeId_t PipeId);
 CFE_SB_PipeId_t  CFE_SB_GetAvailPipeIdx(void);
-CFE_SB_DestinationD_t *CFE_SB_GetDestPtr (CFE_SB_MsgKey_t MsgKey, CFE_SB_PipeId_t PipeId);
+CFE_SB_DestinationD_t *CFE_SB_GetDestPtr (CFE_SB_MsgId_t MsgId, CFE_SB_PipeId_t PipeId);
 int32 CFE_SB_DeletePipeWithAppId(CFE_SB_PipeId_t PipeId,CFE_ES_ResourceID_t AppId);
 int32 CFE_SB_DeletePipeFull(CFE_SB_PipeId_t PipeId,CFE_ES_ResourceID_t AppId);
 int32 CFE_SB_SubscribeFull(CFE_SB_MsgId_t   MsgId,
@@ -451,102 +394,6 @@ int32 CFE_SB_SendPrevSubsCmd(const CFE_SB_SendPrevSubs_t *data);
  */
 
 extern cfe_sb_t CFE_SB;
-
-
-
-/* ---------------------------------------------------------
- * HELPER FUNCTIONS FOR TYPE-SAFE WRAPPERS / HOLDING STRUCTS
- *
- * These functions implement the type conversions between "bare numbers" and
- * the holding structures, as well as sanity tests for the holding structures.
- *
- * The data within the holding structures should never be directly in the app,
- * one of these helpers should be used once it is verified that the conversion
- * or use case is legitimate.
- * --------------------------------------------------------- */
-
-/**
- * @brief Identifies whether a given CFE_SB_MsgKey_t is valid
- *
- * Implements a basic sanity check on the value provided
- *
- * @returns true if sanity checks passed, false otherwise.
- */
-static inline bool CFE_SB_IsValidMsgKey(CFE_SB_MsgKey_t MsgKey)
-{
-    return (MsgKey.KeyIdx != 0 && MsgKey.KeyIdx <= CFE_SB_MAX_NUMBER_OF_MSG_KEYS);
-}
-
-/**
- * @brief Identifies whether a given CFE_SB_MsgRouteIdx_t is valid
- *
- * Implements a basic sanity check on the value provided
- *
- * @returns true if sanity checks passed, false otherwise.
- */
-static inline bool CFE_SB_IsValidRouteIdx(CFE_SB_MsgRouteIdx_t RouteIdx)
-{
-    return (RouteIdx.RouteIdx != 0 && RouteIdx.RouteIdx <= CFE_PLATFORM_SB_MAX_MSG_IDS);
-}
-
-/**
- * @brief Converts between a CFE_SB_MsgKey_t and a raw value
- *
- * Converts the supplied value into a "bare number" suitable for performing
- * array lookups or other tasks for which the holding structure cannot be used directly.
- *
- * Use with caution, as this removes the type safety information from the value.
- *
- * @note It is assumed the value has already been validated using CFE_SB_IsValidMsgKey()
- *
- * @returns The underlying index value
- */
-static inline CFE_SB_MsgKey_Atom_t CFE_SB_MsgKeyToValue(CFE_SB_MsgKey_t MsgKey)
-{
-    return (MsgKey.KeyIdx - 1);
-}
-
-/**
- * @brief Converts between a CFE_SB_MsgKey_t and a raw value
- *
- * Converts the supplied "bare number" into a type-safe CFE_SB_MsgKey_t value
- *
- * @returns A CFE_SB_MsgKey_t value
- */
-static inline CFE_SB_MsgKey_t CFE_SB_ValueToMsgKey(CFE_SB_MsgKey_Atom_t KeyIdx)
-{
-    return ((CFE_SB_MsgKey_t){ .KeyIdx = 1 + KeyIdx });
-}
-
-/**
- * @brief Converts between a CFE_SB_MsgRouteIdx_t and a raw value
- *
- * Converts the supplied "bare number" into a type-safe CFE_SB_MsgRouteIdx_t value
- *
- * @returns A CFE_SB_MsgRouteIdx_t value
- */
-static inline CFE_SB_MsgRouteIdx_t CFE_SB_ValueToRouteIdx(CFE_SB_MsgRouteIdx_Atom_t TableIdx)
-{
-    return ((CFE_SB_MsgRouteIdx_t){ .RouteIdx = 1 + TableIdx });
-}
-
-/**
- * @brief Converts between a CFE_SB_MsgRouteIdx_t and a raw value
- *
- * Converts the supplied value into a "bare number" suitable for performing
- * array lookups or other tasks for which the holding structure cannot be used directly.
- *
- * Use with caution, as this removes the type safety information from the value.
- *
- * @note It is assumed the value has already been validated using CFE_SB_IsValidRouteIdx()
- *
- * @returns The underlying index value
- */
-static inline CFE_SB_MsgRouteIdx_Atom_t CFE_SB_RouteIdxToValue(CFE_SB_MsgRouteIdx_t RouteIdx)
-{
-    return (RouteIdx.RouteIdx - 1);
-}
-
 
 #endif /* _cfe_sb_priv_ */
 /*****************************************************************************/

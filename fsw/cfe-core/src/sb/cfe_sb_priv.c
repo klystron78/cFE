@@ -88,31 +88,6 @@
 #include <string.h>
 
 /******************************************************************************
-**  Function:  CFE_SB_InitIdxStack()
-**
-**  Purpose: Initialize a push/pop stack of routing table indexes.
-**           On init each must be unique. After system initialization SB_Idx_top
-**           will always point/index to the next available routing table index
-**
-**  Arguments:
-**
-**  Return:
-**    None
-*/
-
-void CFE_SB_InitIdxStack(void)
-{
-   uint16 i;
-
-   CFE_SB.RouteIdxTop = 0;
-   for (i=0; i<CFE_PLATFORM_SB_MAX_MSG_IDS; i++)
-    {
-       CFE_SB.RouteIdxStack[i] = CFE_SB_ValueToRouteIdx(i);
-    }
-}
-
-
-/******************************************************************************
 **  Function:  CFE_SB_CleanUpApp()
 **
 **  Purpose:
@@ -174,64 +149,6 @@ CFE_SB_PipeId_t CFE_SB_GetAvailPipeIdx(void){
 
 }/* end CFE_SB_GetAvailPipeIdx */
 
-/******************************************************************************
-**  Function:  CFE_SB_RouteIdxPop_Unsync()
-**
-**  Purpose:
-**    SB internal function to get the next available Routing Table element
-**    (CFE_SB_RouteEntry_t). Typically called when an application subscribes
-**    to a message.
-**
-**  Assumptions, External Events, and Notes:
-**      Calls to this function assumed to be protected by a semaphore
-**  Arguments:
-**      None
-**
-**  Return:
-**    Returns the index of an empty Routing Table element or
-**    CFE_SB_INVALID_ROUTE_IDX if there are no more elements available.
-*/
-CFE_SB_MsgRouteIdx_t CFE_SB_RouteIdxPop_Unsync (void) {
-
-    CFE_SB_MsgRouteIdx_t retValue;
-
-    /* This stack grows from 0 to (CFE_PLATFORM_SB_MAX_MSG_IDS - 1) */
-    if (CFE_SB.RouteIdxTop >= CFE_PLATFORM_SB_MAX_MSG_IDS) {
-        retValue = CFE_SB_INVALID_ROUTE_IDX; /* no more Idx remaining, all used */
-    } else {    
-        retValue = CFE_SB.RouteIdxStack[CFE_SB.RouteIdxTop];
-        ++CFE_SB.RouteIdxTop;
-    }
-
-    return (retValue);
-} /* end CFE_SB_IdxPop_Unsync */
-
-
-/******************************************************************************
-**  Function:  CFE_SB_RouteIdxPush_Unsync()
-**
-**  Purpose:
-**    SB internal function to return a Routing Table element to the available stack
-**    (CFE_SB_RouteEntry_t). Typically called when an application un-subscribes
-**    to a message. 0 is a valid idx.
-**
-**  Assumptions, External Events, and Notes:
-**      Calls to this function assumed to be protected by a semaphore
-** 
-**  Arguments:
-**    None
-**
-**  Return:
-**    None
-*/
-void CFE_SB_RouteIdxPush_Unsync (CFE_SB_MsgRouteIdx_t idx) {
-
-    /* This stack grows from 0 to (CFE_PLATFORM_SB_MAX_MSG_IDS - 1) */
-    if (CFE_SB.RouteIdxTop > 0) {
-        --CFE_SB.RouteIdxTop;
-        CFE_SB.RouteIdxStack[CFE_SB.RouteIdxTop] = idx;
-    }
-} /* end CFE_SB_IdxPush_Unsync */
 
 /******************************************************************************
 **  Function:  CFE_SB_GetPipeIdx()
@@ -380,20 +297,17 @@ CFE_SB_PipeD_t *CFE_SB_GetPipePtr(CFE_SB_PipeId_t PipeId) {
 **    Pointer to the destination descriptor that corresponds to the msg/pipe
 **    combination. If the destination does not exist, return NULL.
 */
-CFE_SB_DestinationD_t  *CFE_SB_GetDestPtr(CFE_SB_MsgKey_t MsgKey,
+CFE_SB_DestinationD_t  *CFE_SB_GetDestPtr(CFE_SB_MsgId_t MsgId,
                                           CFE_SB_PipeId_t PipeId){
-
-    CFE_SB_MsgRouteIdx_t    Idx;
+    CFE_SB_RouteEntry_t *RoutePtr;
     CFE_SB_DestinationD_t   *DestPtr;
 
-    Idx = CFE_SB_GetRoutingTblIdx(MsgKey);
-
-    if(!CFE_SB_IsValidRouteIdx(Idx))
+    if(!(RoutePtr=CFE_SB_GetRoutePtrFromMsgId(MsgId)))
     {
         return NULL;
     }/* end if */
 
-    DestPtr = CFE_SB_GetRoutePtrFromIdx(Idx)->ListHeadPtr;
+    DestPtr = RoutePtr->ListHeadPtr;
 
     while(DestPtr != NULL){
 
@@ -409,83 +323,100 @@ CFE_SB_DestinationD_t  *CFE_SB_GetDestPtr(CFE_SB_MsgKey_t MsgKey,
 
 }/* end CFE_SB_GetDestPtr */
 
-
-
 /******************************************************************************
-**  Function:  CFE_SB_GetRoutingTblIdx()
+**  Function:  CFE_SB_LowerBound()
 **
 **  Purpose:
-**    SB internal function to get the index of the routing table element
-**    associated with the given message id.
-**
-**  Assumptions:
-**    Calls to this are predicated by a call to CFE_SB_IsValidMsgKey
-**    which already check the MsgKey argument
+**    Equivalent of c++ std::lower_bound. Finds the first entry in the index
+**    greater than or equal to the given MsgId.
 **
 **  Arguments:
-**    MsgKey  : ID of the message
-**    PipeId : Pipe ID for the destination.
+**    MsgId  : ID of the message
 **
 **  Return:
-**    Will return the index of the routing table element for the given message ID
+**    Will return a route table entry for the given MsgId if it exists,
+**    otherwise will return NULL.
 */
-CFE_SB_MsgRouteIdx_t CFE_SB_GetRoutingTblIdx(CFE_SB_MsgKey_t MsgKey){
-
-    return CFE_SB.MsgMap[CFE_SB_MsgKeyToValue(MsgKey)];
-
-}/* end CFE_SB_GetRoutingTblIdx */
-
-
-
-/******************************************************************************
-**  Function:  CFE_SB_SetRoutingTblIdx()
-**
-**  Purpose:
-**    SB internal function to set a value in the message map. The "Value" is
-**    the routing table index of the given message ID. The message map is used
-**    for quick routing table index lookups of a given message ID. The cost of
-**    this quick lookup is 8K bytes of memory(for CCSDS).
-**
-**  Assumptions:
-**    Calls to this are predicated by a call to CFE_SB_IsValidMsgKey
-**    which already check the MsgKey argument
-**
-**  Arguments:
-**    MsgKey  : ID of the message
-**    Value  : value to set.
-**
-**  Return:
-**
-*/
-void CFE_SB_SetRoutingTblIdx(CFE_SB_MsgKey_t MsgKey, CFE_SB_MsgRouteIdx_t Value){
-
-    CFE_SB.MsgMap[CFE_SB_MsgKeyToValue(MsgKey)] = Value;
-
-}/* end CFE_SB_SetRoutingTblIdx */
-
-
-/******************************************************************************
-**  Function:  CFE_SB_GetRoutePtrFromIdx()
-**
-**  Purpose:
-**    SB internal function to obtain a pointer to a routing table entry
-**    based on a CFE_SB_MsgRouteIdx_t value.
-**
-**  Assumptions:
-**    Calls to this are predicated by a call to CFE_SB_IsValidRouteIdx
-**    which already check the RouteIdx argument
-**
-**  Arguments:
-**    RouteIdx  : ID of the route to get
-**
-**  Return:
-**    Pointer to route entry
-**
-*/
-CFE_SB_RouteEntry_t* CFE_SB_GetRoutePtrFromIdx(CFE_SB_MsgRouteIdx_t RouteIdx)
+static uint32 CFE_SB_LowerBound(CFE_SB_MsgId_t MsgId)
 {
-    return &CFE_SB.RoutingTbl[CFE_SB_RouteIdxToValue(RouteIdx)];
-} /* end CFE_SB_GetRouteFromIdx */
+    uint32 first = 0;
+    uint32 i;
+    uint32 count = CFE_SB.StatTlmMsg.Payload.MsgIdsInUse;
+    uint32 step;
+
+    while(count>0) {
+        i = first;
+        step = count>>1;
+        i += step;
+        if(CFE_SB.RoutingTbl[i].MsgId<MsgId) {
+            first = i+1;
+            count -= step+1;
+        }
+        else count = step;
+    }
+
+    return first;
+}
+
+/******************************************************************************
+**  Function:  CFE_SB_GetRoutePtrFromMsgId()
+**
+**  Purpose:
+**    Get a route entry from the routing table.
+**
+**    MUST CALL WITH SHARED DATA LOCK HELD
+**
+**  Arguments:
+**    MsgId  : ID of the message
+**
+**  Return:
+**    Will return a route table entry for the given MsgId if it exists,
+**    otherwise will return NULL.
+*/
+CFE_SB_RouteEntry_t* CFE_SB_GetRoutePtrFromMsgId(CFE_SB_MsgId_t MsgId)
+{
+    int32_t index = CFE_SB_LowerBound(MsgId);
+
+    if((index==CFE_SB.StatTlmMsg.Payload.MsgIdsInUse)||(CFE_SB.RoutingTbl[index].MsgId!=MsgId)) return NULL; /* didn't find it */
+    return CFE_SB.RoutingTbl+index;
+}
+
+/******************************************************************************
+**  Function:  CFE_SB_InsertRouteEntryFromMsgId()
+**
+**  Purpose:
+**    Insert a new route entry into the routing table.
+**
+**    MUST CALL WITH SHARED DATA LOCK HELD
+**
+**  Arguments:
+**    MsgId  : ID of the message
+**
+**  Return:
+**     Will return a route entry for the new MsgId, or NULL if there are no
+**     free entries or the given MsgId already exists.
+*/
+CFE_SB_RouteEntry_t* CFE_SB_InsertRouteEntryFromMsgId(CFE_SB_MsgId_t MsgId)
+{
+    int32_t index;
+
+    /* first, check if the table is full */
+    if(CFE_SB.StatTlmMsg.Payload.MsgIdsInUse==CFE_PLATFORM_SB_MAX_MSG_IDS) return NULL;
+
+    index = CFE_SB_LowerBound(MsgId);
+    
+    /* does this ID already exist in the table? */
+    if(CFE_SB.RoutingTbl[index].MsgId==MsgId) return NULL;
+
+    /* it isn't in the table, and there's room! so let's insert it */
+    memmove(CFE_SB.RoutingTbl+index+1, CFE_SB.RoutingTbl+index, sizeof(*CFE_SB.RoutingTbl)*(CFE_SB.StatTlmMsg.Payload.MsgIdsInUse-index));
+    memset(CFE_SB.RoutingTbl+index, 0, sizeof(*CFE_SB.RoutingTbl));
+    CFE_SB.RoutingTbl[index].MsgId = MsgId;
+
+    ++CFE_SB.StatTlmMsg.Payload.MsgIdsInUse;
+
+    return CFE_SB.RoutingTbl+index;
+}
 
 /******************************************************************************
 **  Function:  CFE_SB_DuplicateSubscribeCheck()
@@ -501,21 +432,19 @@ CFE_SB_RouteEntry_t* CFE_SB_GetRoutePtrFromIdx(CFE_SB_MsgRouteIdx_t RouteIdx)
 **    Will return CFE_SB_DUPLICATE if the given MsgId/PipeId subscription
 **    exists in SB routing tables, otherwise will return CFE_SB_NO_DUPLICATE.
 */
-int32 CFE_SB_DuplicateSubscribeCheck(CFE_SB_MsgKey_t MsgKey,
+int32 CFE_SB_DuplicateSubscribeCheck(CFE_SB_MsgId_t MsgId,
                                        CFE_SB_PipeId_t PipeId){
 
-    CFE_SB_MsgRouteIdx_t    Idx;
+    CFE_SB_RouteEntry_t *RoutePtr;
     CFE_SB_DestinationD_t   *DestPtr;
 
-    Idx = CFE_SB_GetRoutingTblIdx(MsgKey);
-
-    if(!CFE_SB_IsValidRouteIdx(Idx))
+    if(!(RoutePtr=CFE_SB_GetRoutePtrFromMsgId(MsgId)))
     {
         DestPtr = NULL;
     }
     else
     {
-        DestPtr = CFE_SB_GetRoutePtrFromIdx(Idx)->ListHeadPtr;
+        DestPtr = RoutePtr->ListHeadPtr;
     }/* end if */
 
     while(DestPtr != NULL){

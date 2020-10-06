@@ -638,7 +638,7 @@ int32 CFE_SB_EnableRouteCmd(const CFE_SB_EnableRoute_t *data)
        return CFE_SUCCESS;
     }/* end if */
 
-    DestPtr = CFE_SB_GetDestPtr(CFE_SB_ConvertMsgIdtoMsgKey(MsgId), PipeId);
+    DestPtr = CFE_SB_GetDestPtr(MsgId, PipeId);
     if(DestPtr == NULL){
         CFE_EVS_SendEvent(CFE_SB_ENBL_RTE1_EID,CFE_EVS_EventType_ERROR,
                 "Enbl Route Cmd:Route does not exist.Msg 0x%x,Pipe %d",
@@ -702,7 +702,7 @@ int32 CFE_SB_DisableRouteCmd(const CFE_SB_DisableRoute_t *data)
        return CFE_SUCCESS;
     }/* end if */
 
-    DestPtr = CFE_SB_GetDestPtr(CFE_SB_ConvertMsgIdtoMsgKey(MsgId), PipeId);
+    DestPtr = CFE_SB_GetDestPtr(MsgId, PipeId);
     if(DestPtr == NULL){
         CFE_EVS_SendEvent(CFE_SB_DSBL_RTE1_EID,CFE_EVS_EventType_ERROR,
             "Disable Route Cmd:Route does not exist,Msg 0x%x,Pipe %d",
@@ -858,9 +858,8 @@ int32 CFE_SB_SendMapInfoCmd(const CFE_SB_SendMapInfo_t *data)
 */
 int32 CFE_SB_SendRtgInfo(const char *Filename)
 {
-    CFE_SB_MsgRouteIdx_t        RtgTblIdx;
     const CFE_SB_RouteEntry_t*  RtgTblPtr;
-    CFE_SB_MsgKey_Atom_t        MsgKeyVal;
+    int32                       MsgKeyVal;
     osal_id_t                   fd;
     int32                       Status;
     uint32                      FileSize = 0;
@@ -892,21 +891,11 @@ int32 CFE_SB_SendRtgInfo(const char *Filename)
     FileSize = Status;
 
     /* loop through the entire MsgMap */
-    for(MsgKeyVal=0; MsgKeyVal < CFE_SB_MAX_NUMBER_OF_MSG_KEYS; ++MsgKeyVal)
+    for(MsgKeyVal=0; MsgKeyVal < CFE_SB.StatTlmMsg.Payload.MsgIdsInUse; ++MsgKeyVal)
     {
-        RtgTblIdx = CFE_SB.MsgMap[MsgKeyVal];
-
-        /* Only process table entry if it is used. */
-        if(!CFE_SB_IsValidRouteIdx(RtgTblIdx))
-        {
-            DestPtr = NULL;
-            RtgTblPtr = NULL;
-        } 
-        else 
-        {
-            RtgTblPtr = CFE_SB_GetRoutePtrFromIdx(RtgTblIdx);
-            DestPtr = RtgTblPtr->ListHeadPtr;
-        }
+        /* The array is contiguous, and the number of items is kept in MsgIdsInUse, so it's valid */
+        RtgTblPtr = &CFE_SB.RoutingTbl[MsgKeyVal];
+        DestPtr = RtgTblPtr->ListHeadPtr;
 
         while(DestPtr != NULL){
 
@@ -1046,8 +1035,7 @@ int32 CFE_SB_SendPipeInfo(const char *Filename)
 int32 CFE_SB_SendMapInfo(const char *Filename)
 {
     const CFE_SB_RouteEntry_t*  RtgTblPtr;
-    CFE_SB_MsgRouteIdx_t        RtgTblIdx;
-    CFE_SB_MsgKey_Atom_t        MsgKeyVal;
+    int32        MsgKeyVal;
     osal_id_t  fd;
     int32  Status;
     uint32 FileSize = 0;
@@ -1077,28 +1065,23 @@ int32 CFE_SB_SendMapInfo(const char *Filename)
     FileSize = Status;
 
     /* loop through the entire MsgMap */
-    for(MsgKeyVal=0; MsgKeyVal < CFE_SB_MAX_NUMBER_OF_MSG_KEYS; ++MsgKeyVal)
+    for(MsgKeyVal=0; MsgKeyVal < CFE_SB.StatTlmMsg.Payload.MsgIdsInUse; ++MsgKeyVal)
     {
-        RtgTblIdx = CFE_SB_GetRoutingTblIdx(CFE_SB_ValueToMsgKey(MsgKeyVal));
+        /* The array is contiguous, and the number of items is kept in MsgIdsInUse, so it's valid */
+        RtgTblPtr = &CFE_SB.RoutingTbl[MsgKeyVal];
 
-        if(CFE_SB_IsValidRouteIdx(RtgTblIdx))
-        {
-            RtgTblPtr = CFE_SB_GetRoutePtrFromIdx(RtgTblIdx);
+        Entry.MsgId = RtgTblPtr->MsgId;
+        Entry.Index = MsgKeyVal;
 
-            Entry.MsgId = RtgTblPtr->MsgId;
-            Entry.Index = CFE_SB_RouteIdxToValue(RtgTblIdx);
+        Status = OS_write (fd, &Entry, sizeof(CFE_SB_MsgMapFileEntry_t));
+        if(Status != sizeof(CFE_SB_MsgMapFileEntry_t)){
+            CFE_SB_FileWriteByteCntErr(Filename,sizeof(CFE_SB_MsgMapFileEntry_t),Status);
+            OS_close(fd);
+            return CFE_SB_FILE_IO_ERR;
+        }/* end if */
 
-            Status = OS_write (fd, &Entry, sizeof(CFE_SB_MsgMapFileEntry_t));
-            if(Status != sizeof(CFE_SB_MsgMapFileEntry_t)){
-                CFE_SB_FileWriteByteCntErr(Filename,sizeof(CFE_SB_MsgMapFileEntry_t),Status);
-                OS_close(fd);
-                return CFE_SB_FILE_IO_ERR;
-            }/* end if */
-
-            FileSize += Status;
-            EntryCount ++;
-
-        }/* end for */
+        FileSize += Status;
+        EntryCount ++;
     }/* end for */
 
     OS_close(fd);
@@ -1129,7 +1112,7 @@ int32 CFE_SB_SendMapInfo(const char *Filename)
 */
 int32 CFE_SB_SendPrevSubsCmd(const CFE_SB_SendPrevSubs_t *data)
 {
-  CFE_SB_MsgRouteIdx_Atom_t i;
+  CFE_SB_MsgRouteIdx_Atom_t MsgKeyVal;
   const CFE_SB_RouteEntry_t* RoutePtr;
   uint32 EntryNum = 0;
   uint32 SegNum = 1;
@@ -1140,20 +1123,12 @@ int32 CFE_SB_SendPrevSubsCmd(const CFE_SB_SendPrevSubs_t *data)
   CFE_SB_LockSharedData(__func__,__LINE__);
 
   /* seek msgids that are in use */
-  for(i=0;i<CFE_PLATFORM_SB_MAX_MSG_IDS;++i)
+  for(MsgKeyVal=0; MsgKeyVal < CFE_SB.StatTlmMsg.Payload.MsgIdsInUse; ++MsgKeyVal)
   {
-      RoutePtr = CFE_SB_GetRoutePtrFromIdx(CFE_SB_ValueToRouteIdx(i));
-      if(!CFE_SB_IsValidMsgId(RoutePtr->MsgId))
-      {
-          DestPtr = NULL;
-      }
-      else
-      {
-          DestPtr = CFE_SB.RoutingTbl[i].ListHeadPtr;
-      }
-        
+        /* The array is contiguous, and the number of items is kept in MsgIdsInUse, so it's valid */
+        RoutePtr = &CFE_SB.RoutingTbl[MsgKeyVal];
+        DestPtr = RoutePtr->ListHeadPtr;
         while(DestPtr != NULL){
-
             if(DestPtr->Scope == CFE_SB_GLOBAL){
             
                 /* ...add entry into pkt */
@@ -1226,23 +1201,18 @@ int32 CFE_SB_SendPrevSubsCmd(const CFE_SB_SendPrevSubs_t *data)
 */
 uint32 CFE_SB_FindGlobalMsgIdCnt(void){
 
-    CFE_SB_MsgRouteIdx_Atom_t i;
+    CFE_SB_MsgRouteIdx_Atom_t MsgKeyVal;
     uint32 cnt = 0;
     const CFE_SB_RouteEntry_t* RoutePtr;
     CFE_SB_DestinationD_t *DestPtr = NULL;
     
-    for(i=0;i<CFE_PLATFORM_SB_MAX_MSG_IDS;i++)
+    /* loop through the entire MsgMap */
+    for(MsgKeyVal=0; MsgKeyVal < CFE_SB.StatTlmMsg.Payload.MsgIdsInUse; ++MsgKeyVal)
     {
-        RoutePtr = CFE_SB_GetRoutePtrFromIdx(CFE_SB_ValueToRouteIdx(i));
-        if(!CFE_SB_IsValidMsgId(RoutePtr->MsgId))
-        {
-            DestPtr = NULL;
-        }
-        else
-        {
-            DestPtr = RoutePtr->ListHeadPtr;
-        }
-        
+        /* The array is contiguous, and the number of items is kept in MsgIdsInUse, so it's valid */
+        RoutePtr = &CFE_SB.RoutingTbl[MsgKeyVal];
+        DestPtr = RoutePtr->ListHeadPtr;
+
         while(DestPtr != NULL){
     
             if(DestPtr->Scope == CFE_SB_GLOBAL){
