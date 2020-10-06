@@ -424,28 +424,20 @@ CFE_SB_RouteEntry_t* CFE_SB_InsertRouteEntryFromMsgId(CFE_SB_MsgId_t MsgId)
 **  Purpose:
 **    SB internal function to check for a duplicate subscription.
 **
+**    MUST CALL WITH LOCK HELD
+**
 **  Arguments:
-**    MsgId  : ID of the message
+**    RoutePtr : A router table entry (MUST NOT BE NULL)
 **    PipeId : ID of the pipe
 **
 **  Return:
 **    Will return CFE_SB_DUPLICATE if the given MsgId/PipeId subscription
 **    exists in SB routing tables, otherwise will return CFE_SB_NO_DUPLICATE.
 */
-int32 CFE_SB_DuplicateSubscribeCheck(CFE_SB_MsgId_t MsgId,
+int32 CFE_SB_DuplicateSubscribeCheck(CFE_SB_RouteEntry_t *RoutePtr,
                                        CFE_SB_PipeId_t PipeId){
 
-    CFE_SB_RouteEntry_t *RoutePtr;
-    CFE_SB_DestinationD_t   *DestPtr;
-
-    if(!(RoutePtr=CFE_SB_GetRoutePtrFromMsgId(MsgId)))
-    {
-        DestPtr = NULL;
-    }
-    else
-    {
-        DestPtr = RoutePtr->ListHeadPtr;
-    }/* end if */
+    CFE_SB_DestinationD_t   *DestPtr = RoutePtr->ListHeadPtr;
 
     while(DestPtr != NULL){
 

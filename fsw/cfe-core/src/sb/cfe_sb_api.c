@@ -781,17 +781,6 @@ int32  CFE_SB_SubscribeFull(CFE_SB_MsgId_t   MsgId,
         return CFE_SB_BAD_ARGUMENT;
     }/* end if */
 
-    /* check for duplicate subscription */
-    if(CFE_SB_DuplicateSubscribeCheck(MsgId,PipeId)==CFE_SB_DUPLICATE){
-        CFE_SB.HKTlmMsg.Payload.DuplicateSubscriptionsCounter++;
-        CFE_SB_UnlockSharedData(__func__,__LINE__);
-        CFE_EVS_SendEventWithAppID(CFE_SB_DUP_SUBSCRIP_EID,CFE_EVS_EventType_INFORMATION,CFE_SB.AppId,
-          "Duplicate Subscription,MsgId 0x%x on %s pipe,app %s",
-           (unsigned int)CFE_SB_MsgIdToValue(MsgId),
-           PipeName,CFE_SB_GetAppTskName(TskId,FullName));
-        return CFE_SUCCESS;
-    }/* end if */
-
     /* if not first subscription for this message KEY ... */
     if(!(RoutePtr=CFE_SB_GetRoutePtrFromMsgId(MsgId)))
     {
@@ -816,6 +805,18 @@ int32  CFE_SB_SubscribeFull(CFE_SB_MsgId_t   MsgId,
            CFE_SB.StatTlmMsg.Payload.PeakMsgIdsInUse = CFE_SB.StatTlmMsg.Payload.MsgIdsInUse;
         }/* end if */
     }/* end if */
+    else {
+        /* the route existed, so check to make sure this isn't a duplicate subscription */
+        if(CFE_SB_DuplicateSubscribeCheck(RoutePtr,PipeId)==CFE_SB_DUPLICATE){
+            CFE_SB.HKTlmMsg.Payload.DuplicateSubscriptionsCounter++;
+            CFE_SB_UnlockSharedData(__func__,__LINE__);
+            CFE_EVS_SendEventWithAppID(CFE_SB_DUP_SUBSCRIP_EID,CFE_EVS_EventType_INFORMATION,CFE_SB.AppId,
+              "Duplicate Subscription,MsgId 0x%x on %s pipe,app %s",
+               (unsigned int)CFE_SB_MsgIdToValue(MsgId),
+               PipeName,CFE_SB_GetAppTskName(TskId,FullName));
+            return CFE_SUCCESS;
+        }/* end if */
+    }
 
     if(RoutePtr->Destinations >= CFE_PLATFORM_SB_MAX_DEST_PER_PKT){
         CFE_SB_UnlockSharedData(__func__,__LINE__);

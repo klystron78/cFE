@@ -297,7 +297,7 @@ int32  CFE_SB_WriteQueue(CFE_SB_PipeD_t *pd,uint32 TskId,
 uint8  CFE_SB_GetPipeIdx(CFE_SB_PipeId_t PipeId);
 int32  CFE_SB_ReturnBufferToPool(CFE_SB_BufferD_t *bd);
 void   CFE_SB_ProcessCmdPipePkt(void);
-int32  CFE_SB_DuplicateSubscribeCheck(CFE_SB_MsgId_t MsgId,CFE_SB_PipeId_t PipeId);
+int32  CFE_SB_DuplicateSubscribeCheck(CFE_SB_RouteEntry_t *RoutePtr,CFE_SB_PipeId_t PipeId);
 CFE_SB_RouteEntry_t* CFE_SB_GetRoutePtrFromMsgId(CFE_SB_MsgId_t MsgId);
 CFE_SB_RouteEntry_t* CFE_SB_InsertRouteEntryFromMsgId(CFE_SB_MsgId_t MsgId);
 void   CFE_SB_ResetCounters(void);
